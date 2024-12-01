@@ -53,6 +53,7 @@ module.exports.getPosts = (req, res) => {
 
 module.exports.addPost = (req, res) => {
     const { title, content } = req.body
+    
     res.status(201).json({
         "status": '201',
         "message": 'Post created successfully',
