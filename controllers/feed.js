@@ -1,6 +1,7 @@
 const { validationResult } = require('express-validator')
 const fs = require('fs')
 const path = require('path')
+const ws = require('./../socket')
 const Posts = require('./../model/Posts')
 const Users = require('./../model/User')
 
@@ -14,7 +15,7 @@ module.exports.getPosts = async(req, res, next) => {
       const totalPages = Math.ceil(totalItems / limit)
       const currentPage = queryPage < 1 || !Number.isFinite(queryPage) ? 1 : queryPage > totalPages ? totalPages : queryPage || 1
       const skip = (currentPage - 1) * limit
-      const posts = await Posts.find().skip(skip < 0 ? 0 :  skip).limit(limit);
+      const posts = await Posts.find().populate('creator').sort({createdAt: -1}).skip(skip < 0 ? 0 :  skip).limit(limit);
     
       res.status(200).json({
         posts,
@@ -58,6 +59,9 @@ module.exports.addPost = async (req, res, next) => {
 
       user.posts.push(post)
       await user.save()
+
+      ws.getIO().emit('posts', { action: 'create', post: {...post._doc, creator: {_id: req.userId, name: user.name} }})
+
       res.status(201).json({
           "status": '201',
           "message": 'Post created successfully',
@@ -115,7 +119,7 @@ module.exports.updatePost = async (req, res, next) => {
       throw error
     }
 
-    const post = await Posts.findById(id)
+    const post = await Posts.findById(id).populate('creator')
 
     if(!post) {
       const error = new Error("Post not found")
@@ -124,7 +128,7 @@ module.exports.updatePost = async (req, res, next) => {
       throw error
     }
 
-    if(post.creator.toString() !== req.userId) {
+    if(post.creator._id.toString() !== req.userId) {
       const error = new Error()
       error.message = 'This action is not allow for you'
       error.status = 403
@@ -145,11 +149,12 @@ module.exports.updatePost = async (req, res, next) => {
     post.isNew = false
 
     await post.save()
-
+    ws.getIO().emit('posts', {action: 'update', post: post})
     res.status(200).json({post: post})
   } catch(error) {
     error.status ||= 500
     error.message ||= 'Something failed to updated the post, try again, if the problem persists contact support.'
+    console.log(error)
     next(error)
   }
 }
@@ -193,7 +198,7 @@ module.exports.deletePost = async (req, res, next) => {
 
     user.posts.pull(id)
     await user.save()
-
+    ws.getIO().emit('posts', {action: 'delete', post: id})
     res.status(200).json({post: post})
   } catch(error) {
     error.status ||= 500
@@ -233,7 +238,7 @@ module.exports.updateStatus = async(req, res, next) => {
     user.status = status
     await user.save()
 
-    res.status(200).json()
+    res.status(200).json({"message": "all's good"})
 
     
   } catch(error) {

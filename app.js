@@ -1,8 +1,10 @@
 const express = require('express')
+const http = require('http')
 const cors = require('cors')
 const mongoose = require('mongoose')
 const path = require('path')
 const multer = require('multer')
+const ws = require('./socket')
 const { v4: uuidv4 } = require('uuid')
 const bodyParser = require('body-parser')
 const feedRoutes = require('./routes/feed')
@@ -11,7 +13,9 @@ const authRoutes = require('./routes/auth')
 
 const uri = "mongodb+srv://nodejsmax:cr7eselmejorjugador@cluster0.njj8za8.mongodb.net/first-api?retryWrites=true&w=majority&appName=Cluster0";
 
+
 const app = express()
+const server = http.createServer(app)
 
 const fileStorage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -48,12 +52,23 @@ app.use((req, res, next) => {
     next(error)
 })
 
+ws.init(server)
+
+ws.getIO().on('connection', () => {
+    console.log('Connected')
+})
+
+
 app.use((error, req, res, next) => {
     res.status(error.status).json({error: error.status, message: error.message})
 })
 
 mongoose.connect(uri)
-    .then(app.listen(PORT, () => console.log('Server running on port ' + PORT)))
+    .then(result => {
+        server.listen(PORT, () => console.log('Server running on port ' + PORT))
+        
+        
+    })
     .catch(error => console.log(error))
 
 
