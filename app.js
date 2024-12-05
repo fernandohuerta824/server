@@ -3,12 +3,15 @@ const http = require('http')
 const cors = require('cors')
 const mongoose = require('mongoose')
 const path = require('path')
+const fs = require('fs')
 const multer = require('multer')
-const ws = require('./socket')
+const graphqlHttp = require('graphql-http/lib/use/express')
 const { v4: uuidv4 } = require('uuid')
 const bodyParser = require('body-parser')
-const feedRoutes = require('./routes/feed')
-const authRoutes = require('./routes/auth')
+
+const graphqlSchema = require('./graphql/schema')
+const graphqlResolver= require('./graphql/resolvers')
+const auth = require('./middlewares/auth')
 
 
 const uri = "mongodb+srv://nodejsmax:cr7eselmejorjugador@cluster0.njj8za8.mongodb.net/first-api?retryWrites=true&w=majority&appName=Cluster0";
@@ -43,32 +46,60 @@ app.use(cors({
 app.use(multer({storage: fileStorage, fileFilter}).single('image'))
 app.use(bodyParser.json())
 app.use('/images', express.static(path.join(__dirname, 'images')))
-app.use('/feed', feedRoutes)
-app.use('/auth', authRoutes)
+app.use(auth)
 
-app.use((req, res, next) => {
-    const error = new Error('That endpoint does not exists')
-    error.status = 404
-    next(error)
+app.put('/post-image', (req, res, next) => {
+    if(!req.isAuth) {
+        const error = new Error()
+        error.message = 'Not authorized'
+        error.status = 401
+        throw error
+    }
+    if(!req.file) 
+        return res.status(200).json({message: 'No file provided'})
+    if(req.body.oldPath) 
+        clearImage(req.body.oldPath)
+
+    return res.status(201).json({ message: 'File stored', filePath:  req.file.path.replace('\\', '/')})
 })
 
-ws.init(server)
 
-ws.getIO().on('connection', () => {
-    console.log('Connected')
+app.use('/graphql', (req, res) => {
+    graphqlHttp.createHandler({
+        schema: graphqlSchema,
+        rootValue: graphqlResolver,
+        formatError(error) {
+            if(error.originalError) 
+               return {...error.originalError}
+            
+            return error
+        },
+        context: { req}
+    })(req, res)
 })
 
 
-app.use((error, req, res, next) => {
-    res.status(error.status).json({error: error.status, message: error.message})
-})
+
+
+// app.use((req, res, next) => {
+//     const error = new Error('That endpoint does not exists')
+//     error.status = 404
+//     next(error)
+// })
+
+
+
 
 mongoose.connect(uri)
     .then(result => {
-        server.listen(PORT, () => console.log('Server running on port ' + PORT))
-        
-        
+        server.listen(PORT, () => console.log('Server running on port ' + PORT)) 
     })
     .catch(error => console.log(error))
 
+const clearImage = filePath => {
+    fs.unlink(path.join(__dirname, filePath), (error) => {
+        if(error)
+          throw error
+      })
+}
 
